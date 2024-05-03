@@ -14,46 +14,52 @@ import matplotlib.backends.backend_pdf as pdf
 #####     CHECK THE PARAMETERS     ########
 ######################################################################
 
-def plot_clustering(data, labels, title):
+def display_clustering_plot(data, labels,  plot_title):
     plt.figure(figsize=(8, 6))
-    plt.scatter(data[:, 0], data[:, 1], c=labels, cmap='viridis', s=10)
-    plt.title(title)
+    plt.scatter(data[:, 0], data[:, 1], c=labels, cmap='magnus', s=10)
+    plt.title( plot_title)
     plt.xlabel('Feature 1')
     plt.ylabel('Feature 2')
     plt.colorbar(label='Cluster')
     plt.grid(True)
     plt.show()
 
-def compute_SSE(data, labels):
+def calculate_SSE(data, labels):
   
     sse = 0.0
     for i in np.unique(labels):
-        cluster_points = data[labels == i]
-        cluster_center = np.mean(cluster_points, axis=0)
-        sse += np.sum((cluster_points - cluster_center) ** 2)
+        points_of_clusters = data[labels == i]
+        center_clusters = np.mean(points_of_clusters, axis=0)
+        sse += np.sum((points_of_clusters -center_clusters) ** 2)
     return sse
 
-def adjusted_rand_index(true_labels, pred_labels):
- 
-    contingency_matrix = np.zeros((np.max(true_labels) + 1, np.max(pred_labels) + 1), dtype=np.int64)
+def compute_adjusted_rand_index(true_labels, predicted_labels):
+    """
+    Calculate the adjusted Rand index.
+
+    Parameters:
+    - true_labels: True labels of the data points.
+    - predicted_labels: Predicted labels by the clustering algorithm.
+
+    Returns:
+    - float: Adjusted Rand index value.
+    """
+    matrix = np.zeros((np.max(true_labels) + 1, np.max(predicted_labels) + 1), dtype=np.int64)
     for i in range(len(true_labels)):
-        contingency_matrix[true_labels[i], pred_labels[i]] += 1
+        matrix[true_labels[i], predicted_labels[i]] += 1
 
-    a = np.sum(contingency_matrix, axis=1)
-    b = np.sum(contingency_matrix, axis=0)
-    n = np.sum(contingency_matrix)
-    ab_sum = np.sum(a * (a - 1)) / 2
-    cd_sum = np.sum(b * (b - 1)) / 2
-    a_plus_b_choose_2 = np.sum(a * (a - 1)) / 2
-    c_plus_d_choose_2 = np.sum(b * (b - 1)) / 2
+    sum_a = np.sum(matrix, axis=1)
+    sum_b = np.sum(matrix, axis=0)
+    total = np.sum(matrix)
+    sum_ab = np.sum(sum_a * (sum_a - 1)) / 2
+    sum_cd = np.sum(sum_b * (sum_b - 1)) / 2
+    a_plus_b_choose_2 = np.sum(sum_a * (sum_a - 1)) / 2
+    c_plus_d_choose_2 = np.sum(sum_b * (sum_b - 1)) / 2
+    sum_ad_bc = np.sum(matrix * (matrix - 1)) / 2
 
-    ad_bc = np.sum(contingency_matrix * (contingency_matrix - 1)) / 2
-
-    expected_index = a_plus_b_choose_2 * c_plus_d_choose_2 / n / (n - 1) + ad_bc ** 2 / n / (n - 1)
-    max_index = (a_plus_b_choose_2 + c_plus_d_choose_2) / 2
-    return (ad_bc - expected_index) / (max_index - expected_index)
-
-
+    expected_index = sum_ab * sum_cd / total / (total - 1) + sum_ad_bc ** 2 / total / (total - 1)
+    max_index = (sum_ab + sum_cd) / 2
+    return (sum_ad_bc - expected_index) / (max_index - expected_index)
 
 def jarvis_patrick(
     data: NDArray[np.floating], labels: NDArray[np.int32], params_dict: dict
@@ -109,10 +115,10 @@ def jarvis_patrick(
 
   
     # Calculate ARI
-    ARI = adjusted_rand_index(labels,computed_labels)
+    ARI = compute_adjusted_rand_index(labels,computed_labels)
 
     # Calculate SSE manually
-    SSE = compute_SSE(data,computed_labels)
+    SSE = calculate_SSE(data,computed_labels)
 
     return computed_labels, SSE, ARI
 
@@ -136,7 +142,19 @@ def hyperparameter_study(data, labels, k_range, s_min_range, num_trials):
                 best_s_min = s_min
 
     return best_k, best_s_min
+def compute_scores(data, labels, k_values, s_min_values):
+    sse_scores = np.zeros((len(s_min_values), len(k_values)))
+    ari_scores = np.zeros((len(s_min_values), len(k_values)))
 
+    for i, k in enumerate(k_values):
+        for j, s_min in enumerate(s_min_values):
+            params_dict = {'k': k, 's_min': s_min}
+            _, sse, ari = jarvis_patrick(data, labels, params_dict)
+            sse_scores[j, i] = sse
+            ari_scores[j, i] = ari
+
+    return sse_scores, ari_scores
+    
 def jarvis_patrick_clustering():
     """
     Performs Jarvis-Patrick clustering on a dataset.
@@ -173,9 +191,10 @@ def jarvis_patrick_clustering():
     best_k, best_s_min = hyperparameter_study(data_subset, labels_subset, k_range, s_min_range, num_trials)
     
     params_dict = {'k': best_k, 's_min': best_s_min}
-    
+    pdf_output = pdf.PdfPages("jarvis_patrick_clustering_results.pdf")
     groups = {}
     plots_values={}
+    
     # Apply best hyperparameters on five slices of data
     for i in [0,1,2,3,4]:
         data_slice = cluster_data[i * 1000: (i + 1) * 1000]
@@ -186,49 +205,75 @@ def jarvis_patrick_clustering():
         plots_values[i] = {"computed_labels": computed_labels, "ARI": ari, "SSE": sse}
         
     highest_ari = -1
-    best_dataset_index = None
+    best_index = None
     for i, group_info in plots_values.items():
         if group_info['ARI'] > highest_ari:
             highest_ari = group_info['ARI']
-            best_dataset_index = i
+            best_index = i
             
+    
     pdf_pages = pdf.PdfPages("jarvis_patrick_clustering_plots.pdf")
     
-    
     plt.figure(figsize=(8, 6))
-    plot_ARI = plt.scatter(cluster_data[best_dataset_index * 1000: (best_dataset_index + 1) * 1000, 0], 
-                cluster_data[best_dataset_index * 1000: (best_dataset_index + 1) * 1000, 1], 
-                c=plots_values[best_dataset_index]["computed_labels"], cmap='viridis')
-    plt.title(f'Clustering for Dataset {best_dataset_index} (Highest ARI) with k value :{best_k} and s_min: {best_s_min}')
+    plot_ARI = plt.scatter(cluster_data[best_index * 1000: (best_index + 1) * 1000, 0], 
+                cluster_data[best_index * 1000: (best_index + 1) * 1000, 1], 
+                c=plots_values[best_index]["computed_labels"], cmap='cividis')
+    plt.title(f'Clustering for Dataset {best_index} with Highest ,k value :{best_k} and s_min: {best_s_min} ')
     plt.suptitle('Jarvis - Patrick Clustering')
-    plt.xlabel('Feature 1')
-    plt.ylabel('Feature 2')
+    plt.xlabel('Feature-1')
+    plt.ylabel('Feature-2')
     plt.colorbar(label='Cluster')
     plt.grid(True)
-    pdf_pages.savefig() 
+    pdf_output.savefig() 
     plt.close()
     
     lowest_sse = float('inf')
-    best_dataset_index_sse = None
+    best_index_sse = None
     for i, group_info in plots_values.items():
         if group_info['SSE'] < lowest_sse:
             lowest_sse = group_info['SSE']
-            best_dataset_index_sse = i
+            best_index_sse = i
             
     plt.figure(figsize=(8, 6))
-    plot_SSE = plt.scatter(cluster_data[best_dataset_index_sse * 1000: (best_dataset_index_sse + 1) * 1000, 0], 
-                cluster_data[best_dataset_index_sse * 1000: (best_dataset_index_sse + 1) * 1000, 1], 
-                c=plots_values[best_dataset_index_sse]["computed_labels"], cmap='viridis')
-    plt.title(f'Clustering for Dataset {best_dataset_index_sse} (Lowest SSE) with k value :{best_k} and s_min: {best_s_min}')
+    plot_SSE = plt.scatter(cluster_data[best_index_sse * 1000: (best_index_sse + 1) * 1000, 0], 
+                cluster_data[best_index_sse * 1000: (best_index_sse + 1) * 1000, 1], 
+                c=plots_values[best_index_sse]["computed_labels"], cmap='cividis')
+    plt.title(f'Clustering for Dataset {best_index_sse} with Lowest SSE ,k value :{best_k} and s_min: {best_s_min}')
     plt.suptitle('Jarvis - Patrick Clustering')
-    plt.xlabel('Feature 1')
-    plt.ylabel('Feature 2')
+    plt.xlabel('Feature-1')
+    plt.ylabel('Feature-2')
     plt.colorbar(label='Cluster')
     plt.grid(True)
-    pdf_pages.savefig()  
+    pdf_output.savefig()  
     plt.close()
-    
+    k_values = np.array(k_range)
+    s_min_values = np.array(s_min_range)
+    sse_scores, ari_scores = compute_scores(data_subset, labels_subset, k_values, s_min_values)
+
+    # Plot SSE scores
+    plt.figure(figsize=(8, 6))
+    plt.scatter(np.tile(k_values, len(s_min_range)), np.repeat(s_min_values, len(k_range)), c=sse_scores.flatten(), cmap='viridis')
+    plt.colorbar(label='SSE')
+    plt.title('SSE scores for different values of k and s_min')
+    plt.xlabel('k')
+    plt.ylabel('s_min')
+    plt.grid(True)
+    pdf_pages.savefig()
+    plt.close()
+
+    # Plot ARI scores
+    plt.figure(figsize=(8, 6))
+    plt.scatter(np.tile(k_values, len(s_min_range)), np.repeat(s_min_values, len(k_range)), c=ari_scores.flatten(), cmap='viridis')
+    plt.colorbar(label='ARI')
+    plt.title('ARI scores for different values of k and s_min')
+    plt.xlabel('k')
+    plt.ylabel('s_min')
+    plt.grid(True)
+    pdf_pages.savefig()
+    plt.close()
+
     pdf_pages.close()
+    pdf_output.close()
     
     # Create a dictionary for each parameter pair ('sigma' and 'xi').
  
