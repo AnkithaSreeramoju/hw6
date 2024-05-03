@@ -212,7 +212,7 @@ def jarvis_patrick_clustering():
             best_index = i
             
     
-    pdf_pages = pdf.PdfPages("jarvis_patrick_clustering_plots.pdf")
+    pdf_output = pdf.PdfPages("jarvis_patrick_clustering_plots.pdf")
     
     plt.figure(figsize=(8, 6))
     plot_ARI = plt.scatter(cluster_data[best_index * 1000: (best_index + 1) * 1000, 0], 
